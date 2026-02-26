@@ -21,74 +21,137 @@ type Profile struct {
 	EquipoFutbol    string
 	Edad            string
 	Ciudad          string
+	Mascota         string
+	Pareja          string
 	OldPass1        string
 	OldPass2        string
 	OldPass3        string
 }
 
-// ================================
-// PATRONES CONOCIDOS DE CONTRASEÑAS
-// Basados en análisis de RockYou, HaveIBeenPwned y otros leaks reales
-// ================================
+// ================================================================
+// TABLAS DE MUTACIÓN
+// Basadas en análisis de RockYou, HIBP, CUPP config y hashcat best64/d3ad0ne
+// ================================================================
 
-// sufijos numéricos más comunes encontrados en leaks (orden por frecuencia real)
-var commonNumericSuffixes = []string{
-	"1", "12", "123", "1234", "12345", "123456",
-	"2", "21", "0", "01", "007", "69", "99", "00",
-	"11", "22", "33", "44", "55", "66", "77", "88",
-	"111", "222", "333", "777", "999", "000",
-	"1111", "2222", "3333", "1212", "2121",
-	"12345678", "123123", "321", "4321",
+// numSuffixes: sufijos numéricos ordenados por frecuencia real en leaks.
+// CUPP usa 0-100 por defecto y cubre el ~80% de los casos numéricos.
+// Añadimos años 4 dígitos y patrones de teclado frecuentes.
+var numSuffixes = buildNumSuffixes()
+
+func buildNumSuffixes() []string {
+	seen := make(map[string]bool)
+	var s []string
+	addUniq := func(v string) {
+		if !seen[v] {
+			seen[v] = true
+			s = append(s, v)
+		}
+	}
+
+	// 0–100 completo (CUPP default)
+	for i := 0; i <= 100; i++ {
+		addUniq(fmt.Sprintf("%d", i))
+	}
+	// Años de 2 dígitos
+	for i := 60; i <= 99; i++ {
+		addUniq(fmt.Sprintf("%d", i))
+	}
+	// Años de 4 dígitos
+	for y := 1960; y <= 2025; y++ {
+		addUniq(fmt.Sprintf("%d", y))
+	}
+	// Patrones de teclado numérico
+	for _, p := range []string{
+		"123", "1234", "12345", "123456", "1234567", "12345678", "123456789",
+		"111", "222", "333", "444", "555", "666", "777", "888", "999",
+		"000", "1111", "2222", "3333", "4444", "5555",
+		"1212", "2121", "3131", "1122", "2211",
+		"321", "4321", "54321", "112", "121", "211",
+		"007", "069", "420", "666", "101", "404",
+	} {
+		addUniq(p)
+	}
+	return s
 }
 
-// prefijos numéricos comunes antes de la palabra
-var commonNumericPrefixes = []string{
-	"1", "12", "123", "0", "01", "007", "69", "99",
+// specialSuffixes: sufijos de símbolos más frecuentes en leaks reales
+// Fuente: CUPP specialchars config + hashcat best64 analysis + NotSoSecure study
+var specialSuffixes = []string{
+	"!", "!!", "!!!", ".", "..", "...",
+	"@", "#", "$", "%", "&", "*",
+	"!1", "!12", "!123", "!1234",
+	"!@", "!@#", "!@#$", "!@#$%",
+	"@1", "@123", "@1234",
+	"#1", "#123",
+	"$1", "$123",
+	"1!", "1!!", "12!", "123!", "1234!",
+	".*", "*", "**",
+	"_1", "_12", "_123",
+	"-1", "-12", "-123",
 }
 
-// sufijos de símbolos más comunes en contraseñas filtradas
-var commonSymbolSuffixes = []string{
-	"!", "!!", "!!!", ".", "*", "@", "#", "$", "%", "&",
-	"!1", "!12", "!123", "@1", "#1", "!@", "!@#", "!@#$",
-	".", "..", "...",
+// numSymbolSuffixes: combinaciones número+símbolo muy comunes en políticas
+// de contraseñas que exigen complejidad (ej: Carlos1990!)
+var numSymbolSuffixes = []string{
+	"1!", "1!!", "2!", "12!", "123!", "1234!",
+	"1@", "12@", "123@",
+	"1#", "12#", "123#",
+	"01!", "0!", "00!",
+	"1.", "12.", "123.",
 }
 
-// años comunes usados en contraseñas (nacimientos + años recientes)
-var commonYears = []string{
-	"1970", "1971", "1972", "1973", "1974", "1975",
-	"1976", "1977", "1978", "1979", "1980", "1981",
-	"1982", "1983", "1984", "1985", "1986", "1987",
-	"1988", "1989", "1990", "1991", "1992", "1993",
-	"1994", "1995", "1996", "1997", "1998", "1999",
-	"2000", "2001", "2002", "2003", "2004", "2005",
-	"2020", "2021", "2022", "2023", "2024", "2025",
+// numPrefixes: prefijos numéricos comunes antes de la palabra
+var numPrefixes = []string{
+	"1", "12", "123", "0", "00", "01", "007",
+	"69", "99", "11", "22", "33",
 }
 
-var commonYearsShort = []string{
-	"70", "71", "72", "73", "74", "75", "76", "77", "78", "79",
-	"80", "81", "82", "83", "84", "85", "86", "87", "88", "89",
-	"90", "91", "92", "93", "94", "95", "96", "97", "98", "99",
-	"00", "01", "02", "03", "04", "05",
-	"20", "21", "22", "23", "24", "25",
+// specialPrefixes: prefijos de símbolos comunes
+var specialPrefixes = []string{"!", "@", "#", "$"}
+
+// leetTable: tabla de sustituciones leet.
+// Fuente: CUPP config (a=4,i=1,e=3,t=7,o=0,s=5,g=9,z=2) + extensiones comunes
+var leetTable = map[rune][]string{
+	'a': {"4", "@"},
+	'e': {"3"},
+	'i': {"1", "!"},
+	'o': {"0"},
+	's': {"5", "$"},
+	't': {"7"},
+	'g': {"9"},
+	'z': {"2"},
+	'l': {"1"},
+	'b': {"8"},
 }
 
-// palabras clave comunes que la gente agrega a su nombre/apellido
-var commonKeywords = []string{
-	"pass", "password", "passwd", "clave", "key",
-	"love", "amor", "mi", "el", "la",
-	"admin", "root", "user",
-	"web", "net", "mail",
-	"junior", "senior", "jr",
+// passwordKeywords: palabras que la gente mezcla con su nombre en contraseñas
+// Fuente: estudios de HIBP + análisis de behavior de usuarios
+var passwordKeywords = []string{
+	"pass", "password", "passwd", "clave", "key", "secret",
+	"amor", "love", "mi", "baby", "bebe", "bb",
+	"admin", "root", "user", "web", "mail", "net",
+	"123", "1234", "12345",
+	"forever", "always", "lucky",
 }
 
-// patrones de teclado muy frecuentes en contraseñas filtradas
-var keyboardPatterns = []string{
-	"123", "1234", "12345", "123456", "1234567", "12345678",
-	"qwerty", "qwerty123", "asdf", "asdfgh", "zxcvbn",
-	"abc", "abcd", "abcde", "abc123",
-	"111", "1111", "11111",
-	"000", "0000", "00000",
+// standaloneKeyboard: patrones de teclado autónomos muy frecuentes en leaks
+var standaloneKeyboard = []string{
+	"qwerty", "qwerty123", "qwertyuiop",
+	"asdf", "asdfgh", "asdfghjkl",
+	"zxcvbn",
+	"abc123", "abc", "abcd",
+	"password", "pass", "passwd",
+	"admin", "root", "user", "login",
+	"letmein", "welcome",
+	"iloveyou",
+	"dragon", "monkey", "shadow",
+	"sunshine", "princess", "football",
+	"superman", "batman",
 }
+
+// ================================================================
+// FUNCIÓN PRINCIPAL
+// ================================================================
 
 func RunProfiler() {
 	fmt.Println("\n\033[1m[ MÓDULO 3 - PERFIL AVANZADO ]\033[0m\n")
@@ -112,6 +175,8 @@ func RunProfiler() {
 	}
 
 	p.EquipoFutbol = utils.AskOptional("Equipo de fútbol favorito")
+	p.Mascota = utils.AskOptional("Nombre de mascota")
+	p.Pareja = utils.AskOptional("Nombre de pareja / familiar cercano")
 	p.Edad = utils.AskOptional("Edad actual")
 	p.Ciudad = utils.AskOptional("Ciudad")
 	p.OldPass1 = utils.AskOptional("Contraseña antigua 1")
@@ -135,16 +200,19 @@ func RunProfiler() {
 	output.PrintStats(outputPath, len(result))
 }
 
-// GenerateFromProfile contiene toda la lógica de generación separada del I/O.
-// Esto permite testear la generación sin simular input de usuario.
+// ================================================================
+// GENERADOR PRINCIPAL — separado del I/O para facilitar testing
+// ================================================================
+
 func GenerateFromProfile(p Profile) []string {
 	seen := make(map[string]bool)
 	var result []string
 
 	add := func(s string) {
 		s = strings.TrimSpace(s)
-		if len(s) < 3 || len(s) > 32 {
-			return // filtrar passwords demasiado cortas o largas
+		l := len([]rune(s))
+		if l < 4 || l > 28 {
+			return
 		}
 		if !seen[s] {
 			seen[s] = true
@@ -152,544 +220,531 @@ func GenerateFromProfile(p Profile) []string {
 		}
 	}
 
-	tokens := collectTokens(p)
+	// ── PASO 1: Construir átomos base (tokens personales) ─────────
+	atoms := buildAtoms(p)
 
-	// ============================================================
-	// BLOQUE 1: Variantes individuales de cada token
-	// ============================================================
-	for _, token := range tokens {
-		for _, v := range transforms.AllVariants(token) {
-			add(v)
+	// ── PASO 2: Expandir cada átomo textual a sus formas de casing ─
+	type expandedWord struct {
+		lower string
+		cap   string
+		upper string
+		leet  string // leet simple de lower
+		leetC string // leet de Cap
+	}
+
+	var textForms []expandedWord
+	var numForms []string // átomos numéricos van directo
+
+	for _, a := range atoms {
+		if a.isNumber {
+			numForms = append(numForms, a.val)
+			add(a.val)
+			continue
+		}
+		e := expandedWord{
+			lower: a.val,
+			cap:   transforms.Capitalize(a.val),
+			upper: transforms.ToUpper(a.val),
+			leet:  leetSimple(a.val),
+			leetC: leetSimple(transforms.Capitalize(a.val)),
+		}
+		textForms = append(textForms, e)
+
+		// Formas base directas
+		add(e.lower)
+		add(e.cap)
+		add(e.upper)
+		add(e.leet)
+		add(e.leetC)
+		add(transforms.Reverse(e.lower))
+		add(transforms.Reverse(e.cap))
+
+		// Leet con todas las variantes (solo para tokens cortos ≤8 chars)
+		for _, lv := range leetAllVariants(e.lower) {
+			add(lv)
+			add(transforms.Capitalize(lv))
 		}
 	}
 
-	// ============================================================
-	// BLOQUE 2: Combinaciones de 2 tokens (nombre+apellido, etc.)
-	// ============================================================
-	for i, a := range tokens {
-		for j, b := range tokens {
-			if i == j {
-				continue
-			}
-			add(transforms.Combine(a, b))
-			add(transforms.Combine(transforms.Capitalize(a), b))
-			add(transforms.Combine(a, transforms.Capitalize(b)))
-			add(transforms.Combine(transforms.Capitalize(a), transforms.Capitalize(b)))
-			for _, sep := range []string{"_", ".", "-", "@"} {
-				add(transforms.CombineWith(a, sep, b))
-				add(transforms.CombineWith(transforms.Capitalize(a), sep, b))
+	// ── PASO 3: Núcleo — cada forma × todos los sufijos/prefijos ──
+	// Esta es la operación que multiplica de ~12k a >200k candidatos.
+	// CUPP aplica 0-100 + años + chars especiales a CADA forma.
+	for _, e := range textForms {
+		// Sufijos numéricos (0-100 + años + patrones de teclado)
+		for _, num := range numSuffixes {
+			add(e.lower + num)
+			add(e.cap + num)
+			if e.leet != e.lower {
+				add(e.leet + num)
 			}
 		}
+
+		// Sufijos de símbolos especiales
+		for _, sp := range specialSuffixes {
+			add(e.lower + sp)
+			add(e.cap + sp)
+		}
+
+		// Sufijos número+símbolo (cumple políticas de complejidad)
+		for _, ns := range numSymbolSuffixes {
+			add(e.lower + ns)
+			add(e.cap + ns)
+		}
+
+		// Prefijos numéricos
+		for _, pre := range numPrefixes {
+			add(pre + e.lower)
+			add(pre + e.cap)
+		}
+
+		// Prefijos de símbolos
+		for _, pre := range specialPrefixes {
+			add(pre + e.lower)
+			add(pre + e.cap)
+		}
+
+		// Número + palabra + número (patrón tipo 1carlos1, 123carlos123)
+		for _, num := range []string{"1", "12", "123", "0", "01", "00", "007"} {
+			add(num + e.lower + num)
+			add(num + e.cap + num)
+		}
+
+		// Palabra duplicada (carlos → carloscarlos)
+		add(e.lower + e.lower)
+		add(e.cap + e.lower)
+		add(e.cap + e.cap)
 	}
 
-	// ============================================================
-	// BLOQUE 3: Nombre repetido
-	// ============================================================
-	if p.Nombre != "" {
-		n := strings.ToLower(p.Nombre)
-		nc := transforms.Capitalize(n)
-		add(n + n)
-		add(nc + n)
-		add(n + nc)
-		add(nc + nc)
-	}
-
-	// ============================================================
-	// BLOQUE 4: Año repetido y variantes
-	// ============================================================
+	// ── PASO 4: Año real del objetivo × todas las formas ──────────
+	// El año personal es el multiplicador más efectivo en contraseñas reales.
 	if p.Anio != "" {
+		for _, e := range textForms {
+			add(e.lower + p.Anio)
+			add(e.cap + p.Anio)
+			add(e.upper + p.Anio)
+			add(e.leet + p.Anio)
+			add(e.leetC + p.Anio)
+			add(p.Anio + e.lower)
+			add(p.Anio + e.cap)
+			add(e.lower + p.AnioCorto)
+			add(e.cap + p.AnioCorto)
+			add(p.AnioCorto + e.lower)
+			add(p.AnioCorto + e.cap)
+
+			// forma + año + símbolo
+			for _, sp := range specialSuffixes {
+				add(e.lower + p.Anio + sp)
+				add(e.cap + p.Anio + sp)
+				add(e.lower + p.AnioCorto + sp)
+				add(e.cap + p.AnioCorto + sp)
+			}
+			// forma + año + número simple
+			for _, num := range []string{"1", "2", "3", "12", "123"} {
+				add(e.lower + p.Anio + num)
+				add(e.cap + p.Anio + num)
+			}
+
+			// Sándwich: año-forma-año
+			add(p.Anio + e.lower + p.Anio)
+			add(p.AnioCorto + e.lower + p.AnioCorto)
+			add(p.Anio + e.cap + p.Anio)
+
+			// forma + año repetido
+			add(e.lower + p.Anio + p.Anio)
+			add(e.cap + p.Anio + p.Anio)
+			add(e.lower + p.AnioCorto + p.AnioCorto)
+
+			// Separadores entre forma y año
+			for _, sep := range []string{".", "_", "-", "@"} {
+				add(e.lower + sep + p.Anio)
+				add(e.cap + sep + p.Anio)
+				add(e.lower + sep + p.AnioCorto)
+				add(e.cap + sep + p.AnioCorto)
+				add(p.Anio + sep + e.lower)
+				add(p.Anio + sep + e.cap)
+			}
+		}
+
+		// Variantes del año solo
 		add(p.Anio + p.Anio)
 		add(p.AnioCorto + p.AnioCorto)
 		add(p.Anio + p.AnioCorto)
-		add(p.AnioCorto + p.Anio)
-		for _, suf := range transforms.CommonSuffixes {
-			add(p.Anio + suf)
-			add(p.AnioCorto + suf)
+		for _, sp := range specialSuffixes {
+			add(p.Anio + sp)
+			add(p.AnioCorto + sp)
 		}
 	}
 
-	// ============================================================
-	// BLOQUE 5: Fecha completa en múltiples formatos
-	// ============================================================
+	// ── PASO 5: Combinaciones de 2 formas entre sí ────────────────
+	type sf struct{ lower, cap string }
+	var simpleForms []sf
+	for _, e := range textForms {
+		simpleForms = append(simpleForms, sf{e.lower, e.cap})
+	}
+
+	for i, a := range simpleForms {
+		for j, b := range simpleForms {
+			if i == j {
+				continue
+			}
+			add(a.lower + b.lower)
+			add(a.cap + b.cap)
+			add(a.cap + b.lower)
+			add(a.lower + b.cap)
+
+			for _, sep := range []string{".", "_", "-", "@"} {
+				add(a.lower + sep + b.lower)
+				add(a.cap + sep + b.cap)
+				add(a.cap + sep + b.lower)
+			}
+
+			if p.Anio != "" {
+				add(a.lower + b.lower + p.Anio)
+				add(a.cap + b.cap + p.Anio)
+				add(a.cap + b.cap + p.AnioCorto)
+				for _, sep := range []string{".", "_", "-"} {
+					add(a.cap + sep + b.cap + sep + p.Anio)
+				}
+			}
+
+			// Sufijos comunes sobre la combinación
+			for _, sp := range []string{"!", "1", "12", "123", "1234", "@", "#", "1!"} {
+				add(a.lower + b.lower + sp)
+				add(a.cap + b.cap + sp)
+			}
+		}
+	}
+
+	// ── PASO 6: Fechas en múltiples formatos ─────────────────────
 	if p.Dia != "" && p.Mes != "" && p.Anio != "" {
-		add(p.Dia + p.Mes + p.Anio)
-		add(p.Anio + p.Mes + p.Dia)
-		add(p.Dia + "/" + p.Mes + "/" + p.Anio)
-		add(p.Dia + "-" + p.Mes + "-" + p.Anio)
-		add(p.Dia + "." + p.Mes + "." + p.Anio)
-		add(p.Dia + p.Mes + p.AnioCorto)
-		add(p.Anio + p.Dia + p.Mes)
-		add(p.Dia + p.Mes)
-		add(p.Mes + p.Dia)
-		add(p.Mes + p.Anio)
-		add(p.Dia + p.Anio)
-		// Formato ISO y americano
-		add(p.Anio + "-" + p.Mes + "-" + p.Dia)
-		add(p.Mes + "/" + p.Dia + "/" + p.Anio)
-		for _, suf := range transforms.CommonSuffixes {
-			add(p.Dia + p.Mes + p.Anio + suf)
-			add(p.Dia + p.Mes + p.AnioCorto + suf)
-		}
-	}
-
-	// ============================================================
-	// BLOQUE 6: Nombre + año (patrones más comunes en leaks)
-	// ============================================================
-	if p.Nombre != "" && p.Anio != "" {
-		n := strings.ToLower(p.Nombre)
-		nc := transforms.Capitalize(n)
-		nu := transforms.ToUpper(n)
-
-		add(n + p.Anio)
-		add(nc + p.Anio)
-		add(nu + p.Anio)
-		add(p.Anio + n)
-		add(p.Anio + nc)
-		add(n + p.AnioCorto)
-		add(nc + p.AnioCorto)
-		add(p.AnioCorto + n)
-		add(p.Anio + nu)
-
-		// Año repetido con nombre
-		add(n + p.Anio + p.Anio)
-		add(n + p.AnioCorto + p.AnioCorto)
-		add(nc + p.Anio + p.Anio)
-
-		// Sándwich año-nombre-año
-		add(p.Anio + n + p.Anio)
-		add(p.AnioCorto + n + p.AnioCorto)
-		add(p.Anio + nc + p.Anio)
-
-		// nombre + año + nombre
-		add(n + p.Anio + n)
-		add(nc + p.Anio + n)
-
-		// Separadores
-		for _, sep := range []string{".", "_", "-", "@"} {
-			add(n + sep + p.Anio)
-			add(nc + sep + p.Anio)
-			add(n + sep + p.AnioCorto)
-			add(nc + sep + p.AnioCorto)
-			add(p.Anio + sep + n)
-			add(p.Anio + sep + nc)
+		fechas := []string{
+			p.Dia + p.Mes + p.Anio,
+			p.Anio + p.Mes + p.Dia,
+			p.Dia + p.Mes + p.AnioCorto,
+			p.Dia + p.Mes,
+			p.Mes + p.Anio,
+			p.Mes + p.Dia,
+			p.Anio + p.Dia + p.Mes,
+			p.Dia + "-" + p.Mes + "-" + p.Anio,
+			p.Dia + "/" + p.Mes + "/" + p.Anio,
+			p.Dia + "." + p.Mes + "." + p.Anio,
+			p.Anio + "-" + p.Mes + "-" + p.Dia,
 		}
 
-		// Nombre + año + símbolo
-		for _, suf := range commonSymbolSuffixes {
-			add(n + p.Anio + suf)
-			add(nc + p.Anio + suf)
-			add(n + p.AnioCorto + suf)
-			add(nc + p.AnioCorto + suf)
-		}
-
-		// Nombre + sufijos numéricos comunes (además del año real)
-		for _, num := range commonNumericSuffixes {
-			add(n + num)
-			add(nc + num)
-		}
-
-		// Prefijos numéricos + nombre
-		for _, pre := range commonNumericPrefixes {
-			add(pre + n)
-			add(pre + nc)
-		}
-	}
-
-	// ============================================================
-	// BLOQUE 7: Nombre + fecha completa
-	// ============================================================
-	if p.Nombre != "" && p.Dia != "" && p.Mes != "" && p.Anio != "" {
-		n := strings.ToLower(p.Nombre)
-		nc := transforms.Capitalize(n)
-		add(n + p.Dia + p.Mes + p.Anio)
-		add(nc + p.Dia + p.Mes + p.Anio)
-		add(p.Dia + p.Mes + p.Anio + n)
-		add(n + p.Dia + p.Mes)
-		add(n + p.Mes + p.Anio)
-		add(nc + p.Dia + p.Mes)
-		add(nc + p.Mes + p.Anio)
-		// Formatos inversos
-		add(n + p.Anio + p.Mes + p.Dia)
-		add(nc + p.Anio + p.Mes + p.Dia)
-	}
-
-	// ============================================================
-	// BLOQUE 8: Apellido + año (patrón muy frecuente, faltaba antes)
-	// ============================================================
-	if p.Apellido != "" && p.Anio != "" {
-		a := strings.ToLower(p.Apellido)
-		ac := transforms.Capitalize(a)
-		au := transforms.ToUpper(a)
-
-		add(a + p.Anio)
-		add(ac + p.Anio)
-		add(au + p.Anio)
-		add(p.Anio + a)
-		add(a + p.AnioCorto)
-		add(ac + p.AnioCorto)
-		add(p.AnioCorto + a)
-
-		for _, sep := range []string{".", "_", "-", "@"} {
-			add(a + sep + p.Anio)
-			add(ac + sep + p.Anio)
-			add(a + sep + p.AnioCorto)
-		}
-		for _, suf := range commonSymbolSuffixes {
-			add(a + p.Anio + suf)
-			add(ac + p.Anio + suf)
-			add(a + p.AnioCorto + suf)
-		}
-		for _, num := range commonNumericSuffixes {
-			add(a + num)
-			add(ac + num)
-		}
-	}
-
-	// ============================================================
-	// BLOQUE 9: Nombre + apellido y combinaciones
-	// ============================================================
-	if p.Nombre != "" && p.Apellido != "" {
-		n := strings.ToLower(p.Nombre)
-		a := strings.ToLower(p.Apellido)
-		nc := transforms.Capitalize(n)
-		ac := transforms.Capitalize(a)
-
-		add(n + a)
-		add(nc + ac)
-		add(nc + a)
-		add(n + "_" + a)
-		add(n + "." + a)
-		add(n + "-" + a)
-		add(transforms.TruncateLeft(n, 1) + a)
-		add(transforms.TruncateLeft(n, 1) + "_" + a)
-		add(transforms.TruncateLeft(n, 1) + "." + a)
-		add(a + n)
-		add(ac + nc)
-		add(a + "_" + n)
-		add(a + "." + n)
-
-		// Iniciales
-		ini := transforms.TruncateLeft(n, 1) + transforms.TruncateLeft(a, 1)
-		add(ini)
-
-		if p.Anio != "" {
-			add(n + a + p.Anio)
-			add(nc + ac + p.Anio)
-			add(transforms.TruncateLeft(n, 1) + a + p.Anio)
-			add(a + n + p.Anio)
-			add(ac + nc + p.Anio)
-			add(n + a + p.AnioCorto)
-			add(nc + ac + p.AnioCorto)
-			// Con separadores
-			for _, sep := range []string{".", "_", "-"} {
-				add(n + sep + a + sep + p.Anio)
-				add(nc + sep + ac + sep + p.Anio)
+		for _, fecha := range fechas {
+			add(fecha)
+			for _, sp := range specialSuffixes {
+				add(fecha + sp)
 			}
 		}
 
-		if p.Dia != "" && p.Mes != "" && p.Anio != "" {
-			add(n + a + p.Dia + p.Mes + p.Anio)
-			add(nc + ac + p.Dia + p.Mes + p.Anio)
-		}
-
-		// Nombre+apellido con sufijos numéricos comunes
-		for _, num := range commonNumericSuffixes {
-			add(n + a + num)
-			add(nc + ac + num)
-		}
-		for _, suf := range commonSymbolSuffixes {
-			add(n + a + suf)
-			add(nc + ac + suf)
-		}
-	}
-
-	// ============================================================
-	// BLOQUE 10: Equipo de fútbol (muy común en Latam)
-	// ============================================================
-	if p.EquipoFutbol != "" {
-		eq := strings.ToLower(p.EquipoFutbol)
-		eqc := transforms.Capitalize(eq)
-
-		for _, v := range transforms.AllVariants(eq) {
-			add(v)
-		}
-		if p.Anio != "" {
-			add(eq + p.Anio)
-			add(eqc + p.Anio)
-			add(eq + p.AnioCorto)
-			add(eqc + p.AnioCorto)
-			add(p.Anio + eq)
-		}
-		if p.Nombre != "" {
-			n := strings.ToLower(p.Nombre)
-			add(n + eq)
-			add(eq + n)
-			add(transforms.Capitalize(n) + eqc)
-		}
-		for _, num := range commonNumericSuffixes {
-			add(eq + num)
-			add(eqc + num)
-		}
-		for _, suf := range commonSymbolSuffixes {
-			add(eq + suf)
-			add(eqc + suf)
+		// Nombre/Apellido + cada formato de fecha
+		for _, e := range textForms {
+			for _, fecha := range fechas {
+				add(e.lower + fecha)
+				add(e.cap + fecha)
+				add(fecha + e.lower)
+				add(fecha + e.cap)
+				for _, sp := range []string{"!", "@", "#", "1", "123"} {
+					add(e.lower + fecha + sp)
+					add(e.cap + fecha + sp)
+				}
+			}
 		}
 	}
 
-	// ============================================================
-	// BLOQUE 11: Ciudad
-	// ============================================================
-	if p.Ciudad != "" {
-		c := strings.ToLower(p.Ciudad)
-		cc := transforms.Capitalize(c)
-
-		for _, v := range transforms.AllVariants(c) {
-			add(v)
-		}
-		if p.Anio != "" {
-			add(c + p.Anio)
-			add(cc + p.Anio)
-			add(c + p.AnioCorto)
-		}
-		if p.Nombre != "" {
-			n := strings.ToLower(p.Nombre)
-			add(n + c)
-			add(c + n)
-		}
-		for _, num := range commonNumericSuffixes {
-			add(c + num)
-			add(cc + num)
-		}
-	}
-
-	// ============================================================
-	// BLOQUE 12: Nombre + año de otros años comunes (no solo el de nacimiento)
-	// Cubre el caso donde la persona usa su nombre + año actual o reciente
-	// ============================================================
+	// ── PASO 7: Apodos × todos los sufijos ────────────────────────
 	if p.Nombre != "" {
+		nicks := GetNicknames(p.Nombre)
+		for _, nick := range nicks {
+			nc := transforms.Capitalize(nick)
+			nl := leetSimple(nick)
+
+			add(nick)
+			add(nc)
+			if nl != nick {
+				add(nl)
+			}
+
+			// Sufijos completos sobre cada apodo
+			for _, num := range numSuffixes {
+				add(nick + num)
+				add(nc + num)
+			}
+			for _, sp := range specialSuffixes {
+				add(nick + sp)
+				add(nc + sp)
+			}
+			for _, ns := range numSymbolSuffixes {
+				add(nick + ns)
+				add(nc + ns)
+			}
+
+			if p.Anio != "" {
+				add(nick + p.Anio)
+				add(nc + p.Anio)
+				add(nick + p.AnioCorto)
+				add(nc + p.AnioCorto)
+				add(p.Anio + nick)
+				add(p.Anio + nc)
+				add(nick + p.Anio + p.Anio)
+				add(p.Anio + nick + p.Anio)
+				for _, sp := range specialSuffixes {
+					add(nick + p.Anio + sp)
+					add(nc + p.Anio + sp)
+				}
+			}
+
+			if p.Apellido != "" {
+				a := strings.ToLower(p.Apellido)
+				ac := transforms.Capitalize(a)
+				add(nick + a)
+				add(nc + ac)
+				add(nick + "_" + a)
+				add(nick + "." + a)
+				if p.Anio != "" {
+					add(nick + a + p.Anio)
+					add(nc + ac + p.Anio)
+				}
+				for _, sp := range []string{"!", "1", "123", "@"} {
+					add(nick + a + sp)
+					add(nc + ac + sp)
+				}
+			}
+		}
+	}
+
+	// ── PASO 8: Inicial del nombre + apellido ─────────────────────
+	if p.Nombre != "" && p.Apellido != "" {
 		n := strings.ToLower(p.Nombre)
-		nc := transforms.Capitalize(n)
-		for _, yr := range commonYears {
-			add(n + yr)
-			add(nc + yr)
-		}
-		for _, yr := range commonYearsShort {
-			add(n + yr)
-			add(nc + yr)
-		}
-	}
-
-	// ============================================================
-	// BLOQUE 13: Apellido + año de años comunes
-	// ============================================================
-	if p.Apellido != "" {
 		a := strings.ToLower(p.Apellido)
-		ac := transforms.Capitalize(a)
-		for _, yr := range commonYears {
-			add(a + yr)
-			add(ac + yr)
+		ini := string([]rune(n)[0])
+
+		add(ini + a)
+		add(ini + "." + a)
+		add(ini + "_" + a)
+		add(strings.ToUpper(ini) + transforms.Capitalize(a))
+
+		for _, num := range numSuffixes[:50] {
+			add(ini + a + num)
 		}
-		for _, yr := range commonYearsShort {
-			add(a + yr)
-			add(ac + yr)
+		for _, sp := range specialSuffixes {
+			add(ini + a + sp)
+		}
+		if p.Anio != "" {
+			add(ini + a + p.Anio)
+			add(ini + a + p.AnioCorto)
 		}
 	}
 
-	// ============================================================
-	// BLOQUE 14: Contraseñas antiguas con mutaciones profundas
-	// ============================================================
+	// ── PASO 9: DNI con variantes ─────────────────────────────────
+	if p.DNI != "" {
+		add(p.DNI)
+		for _, sp := range specialSuffixes {
+			add(p.DNI + sp)
+		}
+		for _, e := range textForms {
+			add(e.lower + p.DNI)
+			add(e.cap + p.DNI)
+			add(p.DNI + e.lower)
+			add(p.DNI + e.cap)
+			for _, sp := range specialSuffixes {
+				add(e.lower + p.DNI + sp)
+				add(e.cap + p.DNI + sp)
+			}
+		}
+	}
+
+	// ── PASO 10: Contraseñas antiguas con mutación profunda ───────
+	// La gente suele mutar su contraseña anterior añadiendo sufijos,
+	// cambiando el año o haciendo pequeñas variaciones. Este es el patrón
+	// más efectivo cuando se conocen contraseñas previas.
 	for _, oldPass := range []string{p.OldPass1, p.OldPass2, p.OldPass3} {
 		if oldPass == "" {
 			continue
 		}
-		for _, v := range transforms.AllVariants(oldPass) {
-			add(v)
+		add(oldPass)
+		add(transforms.Capitalize(oldPass))
+		add(transforms.ToUpper(oldPass))
+		add(leetSimple(oldPass))
+
+		for _, num := range numSuffixes {
+			add(oldPass + num)
 		}
+		for _, sp := range specialSuffixes {
+			add(oldPass + sp)
+		}
+		for _, ns := range numSymbolSuffixes {
+			add(oldPass + ns)
+		}
+		for _, pre := range numPrefixes {
+			add(pre + oldPass)
+		}
+
 		if p.Anio != "" {
 			add(oldPass + p.Anio)
 			add(oldPass + p.AnioCorto)
 			add(p.Anio + oldPass)
-			add(p.AnioCorto + oldPass)
+			for _, sp := range specialSuffixes {
+				add(oldPass + p.Anio + sp)
+			}
 		}
-		for _, suf := range transforms.CommonSuffixes {
-			add(oldPass + suf)
+
+		for _, e := range textForms {
+			add(oldPass + e.lower)
+			add(e.lower + oldPass)
 		}
-		for _, suf := range commonSymbolSuffixes {
-			add(oldPass + suf)
+	}
+
+	// ── PASO 11: Palabras clave × bases personales ────────────────
+	for _, e := range textForms {
+		for _, kw := range passwordKeywords {
+			add(e.lower + kw)
+			add(kw + e.lower)
+			add(e.cap + kw)
+			add(kw + e.cap)
+			add(e.lower + "_" + kw)
+			add(kw + "_" + e.lower)
 		}
-		for _, num := range commonNumericSuffixes {
-			add(oldPass + num)
-		}
-		// Patrones de mutación incremental (pass1 → pass2, pass! → pass!!)
-		add(oldPass + "1")
-		add(oldPass + "2")
-		add(oldPass + "!")
-		add(oldPass + "!!")
-		add("1" + oldPass)
+	}
+
+	// ── PASO 12: Patrones de teclado autónomos ───────────────────
+	for _, kp := range standaloneKeyboard {
+		add(kp)
 		if p.Nombre != "" {
 			n := strings.ToLower(p.Nombre)
-			add(oldPass + n)
-			add(n + oldPass)
-		}
-	}
-
-	// ============================================================
-	// BLOQUE 15: DNI con variantes
-	// ============================================================
-	if p.DNI != "" {
-		add(p.DNI)
-		if p.Nombre != "" {
-			n := strings.ToLower(p.Nombre)
-			add(n + p.DNI)
-			add(transforms.Capitalize(n) + p.DNI)
-			add(p.DNI + n)
-		}
-		if p.Apellido != "" {
-			a := strings.ToLower(p.Apellido)
-			add(a + p.DNI)
-			add(p.DNI + a)
-		}
-		for _, suf := range commonSymbolSuffixes {
-			add(p.DNI + suf)
-		}
-	}
-
-	// ============================================================
-	// BLOQUE 16: Apodos completos con todas sus variantes
-	// ============================================================
-	if p.Nombre != "" {
-		for _, nickVariant := range NicknameVariants(p.Nombre) {
-			add(nickVariant)
-		}
-		for _, nick := range GetNicknames(p.Nombre) {
-			if p.Anio != "" {
-				add(nick + p.Anio)
-				add(nick + p.AnioCorto)
-				add(transforms.Capitalize(nick) + p.Anio)
-				add(transforms.Capitalize(nick) + p.AnioCorto)
-				add(p.Anio + nick)
-				add(p.AnioCorto + nick)
-				add(nick + p.Anio + p.Anio)
-				add(p.Anio + nick + p.Anio)
-			}
-			if p.Apellido != "" {
-				a := strings.ToLower(p.Apellido)
-				add(nick + a)
-				add(transforms.Capitalize(nick) + transforms.Capitalize(a))
-				add(nick + "_" + a)
-				add(nick + "." + a)
-			}
-			for _, suf := range commonSymbolSuffixes {
-				add(nick + suf)
-				add(transforms.Capitalize(nick) + suf)
-			}
-			for _, num := range commonNumericSuffixes {
-				add(nick + num)
-				add(transforms.Capitalize(nick) + num)
-			}
-			// Apodo + años comunes (no solo el de nacimiento)
-			for _, yr := range commonYears {
-				add(nick + yr)
-				add(transforms.Capitalize(nick) + yr)
-			}
-		}
-	}
-
-	// ============================================================
-	// BLOQUE 17: Nombre + palabras clave comunes
-	// Patrón: carlos_admin, carlospass, micarlos, etc.
-	// ============================================================
-	if p.Nombre != "" {
-		n := strings.ToLower(p.Nombre)
-		nc := transforms.Capitalize(n)
-		for _, kw := range commonKeywords {
-			add(n + kw)
-			add(kw + n)
-			add(nc + kw)
-			add(kw + nc)
-			add(n + "_" + kw)
-			add(kw + "_" + n)
-		}
-	}
-
-	// ============================================================
-	// BLOQUE 18: Patrones de teclado populares combinados con nombre
-	// ============================================================
-	if p.Nombre != "" {
-		n := strings.ToLower(p.Nombre)
-		nc := transforms.Capitalize(n)
-		for _, kp := range keyboardPatterns {
+			nc := transforms.Capitalize(n)
 			add(n + kp)
 			add(nc + kp)
 			add(kp + n)
+			add(kp + nc)
 		}
 	}
 
-	// ============================================================
-	// BLOQUE 19: Edad con variantes
-	// ============================================================
-	if p.Edad != "" {
-		e := p.Edad
-		if p.Nombre != "" {
-			n := strings.ToLower(p.Nombre)
-			add(n + e)
-			add(transforms.Capitalize(n) + e)
-			add(e + n)
-		}
-		if p.Apellido != "" {
-			a := strings.ToLower(p.Apellido)
-			add(a + e)
-			add(e + a)
-		}
-		for _, suf := range commonSymbolSuffixes {
-			add(e + suf)
+	// ── PASO 13: Leet recursivo sobre combinaciones clave ─────────
+	// Solo sobre las combinaciones más probables para no explotar
+	if p.Nombre != "" && p.Anio != "" {
+		for _, lv := range leetAllVariants(strings.ToLower(p.Nombre)) {
+			add(lv + p.Anio)
+			add(transforms.Capitalize(lv) + p.Anio)
 		}
 	}
-
-	// ============================================================
-	// BLOQUE 20: Solo nombre/apellido con sufijos numéricos comunes
-	// (Cubre cuando el año real no es conocido)
-	// ============================================================
-	bases := []string{}
-	if p.Nombre != "" {
-		bases = append(bases, strings.ToLower(p.Nombre))
-	}
-	if p.Apellido != "" {
-		bases = append(bases, strings.ToLower(p.Apellido))
-	}
-	for _, base := range bases {
-		bc := transforms.Capitalize(base)
-		for _, suf := range commonSymbolSuffixes {
-			add(base + suf)
-			add(bc + suf)
+	if p.Nombre != "" && p.Apellido != "" {
+		combined := strings.ToLower(p.Nombre) + strings.ToLower(p.Apellido)
+		if len([]rune(combined)) <= 10 {
+			for _, lv := range leetAllVariants(combined) {
+				add(lv)
+				add(transforms.Capitalize(lv))
+				if p.Anio != "" {
+					add(lv + p.Anio)
+				}
+			}
 		}
-		// Duplicados: carloscarlos, gomezgomez
-		add(base + base)
-		add(bc + bc)
 	}
 
 	return result
 }
 
-// collectTokens recolecta todos los campos del perfil como tokens base.
-// Filtra tokens vacíos, duplicados y demasiado cortos.
-func collectTokens(p Profile) []string {
-	var tokens []string
+// ================================================================
+// HELPERS INTERNOS
+// ================================================================
 
-	fields := []string{
-		p.Nombre, p.Apellido, p.DNI,
-		p.FechaNacimiento, p.Dia, p.Mes, p.Anio, p.AnioCorto,
-		p.EquipoFutbol, p.Edad, p.Ciudad,
-	}
-
-	seen := make(map[string]bool)
-	for _, f := range fields {
-		f = strings.ToLower(strings.TrimSpace(f))
-		if f != "" && len([]rune(f)) >= 2 && !seen[f] {
-			seen[f] = true
-			tokens = append(tokens, f)
+// leetSimple aplica sustitución leet simple (primera opción por letra).
+func leetSimple(s string) string {
+	var b strings.Builder
+	for _, r := range strings.ToLower(s) {
+		if subs, ok := leetTable[r]; ok {
+			b.WriteString(subs[0])
+		} else {
+			b.WriteRune(r)
 		}
 	}
+	return b.String()
+}
 
+// leetAllVariants genera todas las combinaciones posibles de sustitución leet.
+// Limitado a tokens de ≤10 chars para evitar explosión combinatoria.
+func leetAllVariants(s string) []string {
+	runes := []rune(strings.ToLower(s))
+	if len(runes) > 10 {
+		return []string{leetSimple(s)}
+	}
+
+	results := []string{""}
+	for _, r := range runes {
+		subs, ok := leetTable[r]
+		if !ok {
+			for i := range results {
+				results[i] += string(r)
+			}
+			continue
+		}
+		options := append([]string{string(r)}, subs...)
+		var newResults []string
+		for _, prev := range results {
+			for _, opt := range options {
+				newResults = append(newResults, prev+opt)
+			}
+		}
+		results = newResults
+	}
+
+	// Filtrar el original (ya fue agregado como átomo base)
+	original := strings.ToLower(s)
+	var filtered []string
+	for _, v := range results {
+		if v != original {
+			filtered = append(filtered, v)
+		}
+	}
+	return filtered
+}
+
+// atom representa un token base con metadatos
+type atom struct {
+	val      string
+	isNumber bool
+}
+
+// buildAtoms recolecta todos los campos del perfil como átomos,
+// distinguiendo tokens de texto de los numéricos.
+func buildAtoms(p Profile) []atom {
+	var atoms []atom
+	seen := make(map[string]bool)
+
+	add := func(val string, isNum bool) {
+		val = strings.ToLower(strings.TrimSpace(val))
+		if val == "" || len([]rune(val)) < 2 || seen[val] {
+			return
+		}
+		seen[val] = true
+		atoms = append(atoms, atom{val, isNum})
+	}
+
+	add(p.Nombre, false)
+	add(p.Apellido, false)
+	add(p.EquipoFutbol, false)
+	add(p.Ciudad, false)
+	add(p.Mascota, false)
+	add(p.Pareja, false)
+
+	add(p.DNI, true)
+	add(p.Anio, true)
+	add(p.AnioCorto, true)
+	add(p.Dia, true)
+	add(p.Mes, true)
+	add(p.FechaNacimiento, true)
+	add(p.Edad, true)
+
+	return atoms
+}
+
+// collectTokens mantiene compatibilidad con el resto del código
+func collectTokens(p Profile) []string {
+	atoms := buildAtoms(p)
+	tokens := make([]string, 0, len(atoms))
+	for _, a := range atoms {
+		tokens = append(tokens, a.val)
+	}
 	return tokens
 }
