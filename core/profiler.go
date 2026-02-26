@@ -183,10 +183,56 @@ func RunProfiler() {
 	p.OldPass2 = utils.AskOptional("Contraseña antigua 2")
 	p.OldPass3 = utils.AskOptional("Contraseña antigua 3")
 
+	// ── Módulo: Familiares / Mascotas (OSINT) ─────────────────────
+	fmt.Println()
+	utils.Info("Ahora ingresá familiares, hijos o mascotas encontrados por OSINT.")
+	relatives := AskRelatives()
+
+	// ── Módulo: DNI inteligente ───────────────────────────────────
+	// Si no se conoce el DNI exacto pero sí el año de nacimiento,
+	// preguntamos si generar candidatos de DNI por rango.
+	generateDNIRange := false
+	if p.DNI == "" && p.Anio != "" {
+		answer := utils.AskString("¿Generar candidatos de DNI por rango generacional? [s/n]")
+		answer = strings.ToLower(strings.TrimSpace(answer))
+		generateDNIRange = answer == "s" || answer == "si" || answer == "sí" || answer == "y"
+	}
+
 	fmt.Println()
 	utils.Info("Procesando perfil y generando wordlist...")
 
+	// ── Generación base ───────────────────────────────────────────
 	result := GenerateFromProfile(p)
+
+	// ── Agregar patrones locales argentinos ───────────────────────
+	for _, v := range GenerateArgPatterns(p) {
+		result = appendUniq(result, v)
+	}
+
+	// ── Agregar candidatos de familiares/mascotas ─────────────────
+	for _, v := range GenerateFromRelatives(relatives, p) {
+		result = appendUniq(result, v)
+	}
+
+	// ── Agregar candidatos de DNI por rango si se pidió ───────────
+	if generateDNIRange && p.Anio != "" {
+		birthYear := 0
+		fmt.Sscanf(p.Anio, "%d", &birthYear)
+		if birthYear > 0 {
+			utils.Info("Generando candidatos de DNI por rango generacional (step=2000)...")
+			dniCandidates := GenerateDNICandidates(birthYear, p.Nombre, 2000)
+			for _, v := range dniCandidates {
+				result = appendUniq(result, v)
+			}
+		}
+	}
+
+	// Si el DNI ya se conoce, generar variantes del DNI real
+	if p.DNI != "" {
+		for _, v := range DNIVariantsFromKnown(p.DNI, p.Nombre, p.Apellido, p.Anio) {
+			result = appendUniq(result, v)
+		}
+	}
 
 	fmt.Printf("\n\033[32m[+] Total generado: %d palabras\033[0m\n", len(result))
 
@@ -747,4 +793,23 @@ func collectTokens(p Profile) []string {
 		tokens = append(tokens, a.val)
 	}
 	return tokens
+}
+
+// appendUniq agrega s a result solo si no está ya presente (deduplicación incremental).
+// Usa un enfoque de seen-map externo; aquí lo hacemos simple para merges entre módulos.
+func appendUniq(result []string, s string) []string {
+	s = strings.TrimSpace(s)
+	l := len([]rune(s))
+	if l < 4 || l > 28 {
+		return result
+	}
+	// Nota: esta función es O(n) por llamada, pero se usa solo para merges
+	// entre módulos (no en el loop interno). Para volumen alto considerar
+	// pasar el map seen como parámetro.
+	for _, existing := range result {
+		if existing == s {
+			return result
+		}
+	}
+	return append(result, s)
 }
