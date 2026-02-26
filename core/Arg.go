@@ -20,7 +20,7 @@ import (
 
 // argSuffixPatterns: patrones de repetición locales muy comunes.
 // En Argentina es frecuente duplicar años o agregar el mismo año repetido.
-// Ej: "vicky20242024", "vicky2024.2024", "vicky9090"
+// Ej: "pedro20242024", "perla2024.2024", "carla9090"
 //
 // Esta función los genera para un token + año dado.
 func ArgRepeatPatterns(token, anio, anioCorto string) []string {
@@ -40,17 +40,17 @@ func ArgRepeatPatterns(token, anio, anioCorto string) []string {
 
 	// Patrones de año duplicado (muy comunes en Argentina según análisis de leaks locales)
 	if anio != "" {
-		add(token + anio + anio)             // vicky19901990
-		add(token + anio + "." + anio)       // vicky1990.1990
-		add(token + anio + "_" + anio)       // vicky1990_1990
+		add(token + anio + anio)             // juan19901990
+		add(token + anio + "." + anio)       // juan1990.1990
+		add(token + anio + "_" + anio)       // juan1990_1990
 	}
 	if anioCorto != "" {
-		add(token + anioCorto + anioCorto)         // vicky9090
-		add(token + anioCorto + "." + anioCorto)   // vicky90.90
+		add(token + anioCorto + anioCorto)         // juan9090
+		add(token + anioCorto + "." + anioCorto)   // juan90.90
 	}
 	if anio != "" && anioCorto != "" {
-		add(token + anio + anioCorto)        // vicky199090
-		add(token + anioCorto + anio)        // vicky901990
+		add(token + anio + anioCorto)        // juan199090
+		add(token + anioCorto + anio)        // juan901990
 	}
 
 	// Patrón "token + año actual repetido" (muy visto en 2023-2025)
