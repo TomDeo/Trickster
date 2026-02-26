@@ -1,6 +1,3 @@
-
-Copiar
-
 package core
 
 import (
