@@ -170,6 +170,26 @@ func RunProfiler() {
 		}
 	}
 
+	// 9. Apodos del nombre + todas sus variantes
+	if p.Nombre != "" {
+		for _, nickVariant := range NicknameVariants(p.Nombre) {
+			add(nickVariant)
+		}
+
+		// Apodos combinados con año y apellido
+		for _, nick := range GetNicknames(p.Nombre) {
+			if p.Anio != "" {
+				add(nick + p.Anio)
+				add(nick + p.AnioCorto)
+				add(transforms.Capitalize(nick) + p.Anio)
+			}
+			if p.Apellido != "" {
+				add(nick + strings.ToLower(p.Apellido))
+				add(transforms.Capitalize(nick) + transforms.Capitalize(p.Apellido))
+			}
+		}
+	}
+
 	// ---- Guardar resultado ----
 	fmt.Printf("\n\033[32m[+] Total antes de deduplicar: %d palabras\033[0m\n", len(result))
 
@@ -204,3 +224,4 @@ func collectTokens(p Profile) []string {
 
 	return tokens
 }
+
